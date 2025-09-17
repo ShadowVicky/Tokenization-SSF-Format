@@ -34,6 +34,7 @@ token_specification = [
     ('END', r'[;!_]'),           # Statement terminator
     ('EQUAL', r'='),   # Equals
     ('OP', r'[+*\/\-]'),    # Arithmetic operators
+    ('AS_APOSTROPHE', r'[\u0980-\u09FF]+[\'’ʼ][\u0980-\u09FF]+'),
     ('QUOTES', r'[\"\'‘’“”]'),          # quotes
     ('Fullstop', r'(\.+)$'),
     ('ellips', r'\.(\.)+'),
