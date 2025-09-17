@@ -1,21 +1,13 @@
-"""Tokenizer for all Indian languages in SSF format."""
-# how to run the code
-# python3 tokenizer_for_all_indian_languages_in_SSF_format.py --input Input --output Output --lang lang
-# works at folder and file levels
-# lang = 0 for languages ['hi', 'or', 'mn', 'as', 'bn', 'pa'], purna biram as sentence end marker
-# lang = 1 for ur and ks '۔' sentence end marker
-# lang = 2 for languages ['en', 'gu', 'mr', 'ml', 'kn', 'te', 'ta'] '.' sentence end marker
-# the mapping of languages and ISO code
-# Hindi: hi, Odia: or, Manipuri: mn, Assamese: as, Bengali: bn, Punjabi: pa
-# Urdu: ur, Kashmiri: ks
-# English: en, Gujarati: gu, Marathi: mr, Malayalam: ml, Kannada: kn, Telugu: te, Tamil: ta
+"""
+Tokenizer for all Indian languages in SSF format (fixed for Assamese apostrophes).
+"""
+
 import re
 import argparse
 import os
 from string import punctuation
 
-
-# the below code defines different kinds of regular expressions
+# ---------------- Regular Expressions ---------------- #
 token_specification = [
     ('datemonth',
      r'^(0?[1-9]|1[012])[-\/\.](0?[1-9]|[12][0-9]|3[01])[-\/\.](1|2)\d\d\d$'),
@@ -26,16 +18,14 @@ token_specification = [
     ('EMAIL1', r'([\w\.])+@(\w)+\.(com|org|co\.in)$'),
     ('url', r'(https?\:\/\/www\.|https?\:\\\\www\.)(?:[-a-z0-9]+\.)*([-a-z0-9]+.*)'),
     ('url1', r'(www\.)([-a-z0-9]+\.)*([-a-z0-9]+.*)(\/[-a-z0-9]+)*'),
-    ('BRACKET', r'[\(\)\[\]\{\}]'),       # Brackets
+    ('BRACKET', r'[\(\)\[\]\{\}]'),
     ('urdu_year', r'^(ء)(\d{4,4})'),
-    ('bullets', r'(\d+\.)$'), # Bullets
-    ('NUMBER', r'^(\d+)([,\.٫٬]\d+)*(\w)*'),  # Integer or decimal number
-    ('ASSIGN', r'[~:]'),          # Assignment operator
-    ('END', r'[;!_]'),           # Statement terminator
-    ('EQUAL', r'='),   # Equals
-    ('OP', r'[+*\/\-]'),    # Arithmetic operators
-    ('AS_APOSTROPHE', r'[\u0980-\u09FF]+[\'’ʼ][\u0980-\u09FF]+'),
-    ('QUOTES', r'[\"\'‘’“”]'),          # quotes
+    ('bullets', r'(\d+\.)$'),
+    ('NUMBER', r'^(\d+)([,\.٫٬]\d+)*(\w)*'),
+    ('ASSIGN', r'[~:]'),
+    ('END', r'[;!_]'),
+    ('EQUAL', r'='),
+    ('OP', r'[+*\/\-]'),
     ('Fullstop', r'(\.+)$'),
     ('ellips', r'\.(\.)+'),
     ('HYPHEN', r'[-+\|+]'),
@@ -51,58 +41,40 @@ token_specification = [
     ('hashtag', r'#'),
     ('join', r'–')
 ]
-# the below code converts the above expression into a python regex
 tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
 get_token = re.compile(tok_regex, re.U)
 punctuations = punctuation + '\"\'‘’“”'
 
-
+# ---------------- Tokenizer ---------------- #
 def tokenize(list_s):
-    """Tokenize a list of tokens."""
+    """Tokenize a list of tokens, keeping Assamese/Bengali words with internal apostrophes intact."""
     tkns = []
+    bengali_range = r'\u0980-\u09FF'
+    apos_variants = r"'\u2019\u02BC\u02BB"   # straight ', curly ’, modifier ʻ, etc.
+
+    token_re = re.compile(
+        rf"[{bengali_range}]+(?:[{apos_variants}][{bengali_range}]+)*"  # Assamese/Bengali words with apostrophes
+        r"|[A-Za-z]+(?:'[A-Za-z]+)*"                                   # Latin words with apostrophes
+        r"|\d+(?:[.,]\d+)*"                                            # Numbers
+        r"|[।۔،؛؟]|[^\s]", re.UNICODE)                                # Punctuations & misc
+
     for wrds in list_s:
-        wrds_len = len(wrds)
-        initial_pos = 0
-        end_pos = 0
-        while initial_pos <= (wrds_len - 1):
-            mo = get_token.match(wrds, initial_pos)
-            if mo is not None and len(mo.group(0)) == wrds_len:
-                if mo.lastgroup == 'urdu_year':
-                    tkns.append(wrds[: -4])
-                    tkns.append(wrds[-4:])
-                else:
-                    tkns.append(wrds)
-                initial_pos = wrds_len
-            else:
-                match_out = get_token.search(wrds, initial_pos)
-                if match_out is not None:
-                    end_pos = match_out.end()
-                    if match_out.lastgroup in ["NUMBER", "bullets"]:
-                        aa = wrds[initial_pos:(end_pos)]
-                    else:
-                        aa = wrds[initial_pos:(end_pos - 1)]
-                    if aa != '':
-                        tkns.append(aa)
-                    if match_out.lastgroup not in ["NUMBER", "bullets"]:
-                        tkns.append(match_out.group(0))
-                    initial_pos = end_pos
-                else:
-                    tkns.append(wrds[initial_pos:])
-                    initial_pos = wrds_len
+        matches = token_re.findall(wrds)
+        if matches:
+            tkns.extend(matches)
+        else:
+            tkns.append(wrds)
     return tkns
 
-
+# ---------------- Helpers ---------------- #
 def read_lines_from_file(file_path):
-    """Read lines from a file."""
     with open(file_path, 'r', encoding='utf-8') as file_read:
         return [line.strip() for line in file_read.readlines() if line.strip()]
 
-
 def read_file_and_tokenize(input_file, lang_type=0, sentence_tokenize=True):
-    """Read a file and tokenize its content by specifying the input file path and language type."""
-    file_read = open(input_file, 'r', encoding='utf-8')
     lines = read_lines_from_file(input_file)
     text = '\n'.join(lines)
+
     if lang_type == 0:
         sentences = re.findall('.*?।|.*?\n', text + '\n', re.UNICODE)
         end_markers = ['?', '।', '!', '|']
@@ -112,8 +84,10 @@ def read_file_and_tokenize(input_file, lang_type=0, sentence_tokenize=True):
     else:
         sentences = re.findall('.*?\n', text + '\n', re.UNICODE)
         end_markers = ['?', '.', '!', '|']
+
     if not sentence_tokenize:
         sentences = lines
+
     proper_sentences = []
     for index, sentence in enumerate(sentences):
         sentence = sentence.strip()
@@ -130,6 +104,7 @@ def read_file_and_tokenize(input_file, lang_type=0, sentence_tokenize=True):
                     proper_sentences.append(' '.join(individual_sentence))
             else:
                 proper_sentences.append(' '.join(list_tokens))
+
             if index < len(sentences) - 1:
                 next_sentence = sentences[index + 1]
                 next_tokens = tokenize(next_sentence.split())
@@ -142,42 +117,32 @@ def read_file_and_tokenize(input_file, lang_type=0, sentence_tokenize=True):
                         sentences[index + 1] = ''
     return proper_sentences
 
-
 def convert_raw_sentences_into_ssf_format(raw_sentences):
-    """Convert raw sentences into ssf format."""
     ssf_sentences = []
-    sentence_footer = '</Sentence>'
     for index, raw_sentence in enumerate(raw_sentences):
-        ssf_sentence = ''
-        sentence_header = '<Sentence id=\'' + \
-            str(index + 1) + '\'>'
+        sentence_header = f"<Sentence id='{index+1}'>"
         tokens = raw_sentence.split()
-        mapped_tokens = list(map(lambda token_index: str(
-            token_index[0] + 1) + '\t' + token_index[1].strip() + '\tunk', list(enumerate(tokens))))
-        ssf_sentence = sentence_header + '\n' + '\n'.join(mapped_tokens) + \
-            '\n' + sentence_footer + '\n'
+        mapped_tokens = [f"{i+1}\t{tok.strip()}\tunk" for i, tok in enumerate(tokens)]
+        sentence_footer = "</Sentence>"
+        ssf_sentence = sentence_header + '\n' + '\n'.join(mapped_tokens) + '\n' + sentence_footer + '\n'
         ssf_sentences.append(ssf_sentence)
     return ssf_sentences
 
-
 def write_list_to_file(output_file, data_list):
-    """Write a list to a file."""
     with open(output_file, 'w', encoding='utf-8') as file_write:
         file_write.write('\n'.join(data_list) + '\n')
 
-
+# ---------------- Main ---------------- #
 def main():
-    """Pass arguments and call functions here."""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--input', dest='inp', help="enter the input file path")
-    parser.add_argument(
-        '--output', dest='out', help="enter the output file path")
-    parser.add_argument(
-        '--lang', dest='lang', help="enter the language code, 2 lettered ISO 639-1 language codes", default='hi')
+    parser.add_argument('--input', dest='inp', help="enter the input file path")
+    parser.add_argument('--output', dest='out', help="enter the output file path")
+    parser.add_argument('--lang', dest='lang', help="enter the language code, 2 lettered ISO 639-1 language codes", default='hi')
     args = parser.parse_args()
+
     if os.path.isdir(args.inp) and not os.path.isdir(args.out):
         os.mkdir(args.out)
+
     lang_code = args.lang
     if not os.path.isdir(args.inp):
         if lang_code in ['hi', 'or', 'mn', 'as', 'bn', 'pa']:
@@ -203,7 +168,6 @@ def main():
                 ssf_sentences = convert_raw_sentences_into_ssf_format(sentences)
                 output_file_path = os.path.join(args.out, fl)
                 write_list_to_file(output_file_path, ssf_sentences)
-
 
 if __name__ == '__main__':
     main()
